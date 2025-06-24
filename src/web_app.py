@@ -64,8 +64,15 @@ def login_required(f):
 job_history = load_job_history()
 users = load_users()
 
+# Ensure at least one user exists
 if not users:
-    users['bradlakin1'] = {'password': hash_password('301103'), 'enabled': True}
+    # Create a default user
+    users = {
+        'bradlakin1': {
+            'password': hash_password('301103'),
+            'enabled': True
+        }
+    }
     save_users(users)
 
 def calculate_delivery_date_ac01(collection_date_str):
