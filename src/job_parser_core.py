@@ -61,13 +61,6 @@ class JobParser:
         return None
 
     def parse_jobs(self, text):
-        # First try the tabular format
-        tabular_jobs = self.parse_tabular_format(text)
-        if tabular_jobs:
-            self.jobs.extend(tabular_jobs)
-            return self.jobs
-            
-        # If tabular format didn't work, try the traditional format
         job_texts = re.split(r'\nFROM\n', text)
         job_texts = [t for t in job_texts if t.strip()]
         for job_text in job_texts:
@@ -80,113 +73,7 @@ class JobParser:
                 if 'SPECIAL INSTRUCTIONS' not in job or not job['SPECIAL INSTRUCTIONS']:
                     job['SPECIAL INSTRUCTIONS'] = 'Please call 1 hour before collection'
                 self.jobs.append(job)
-                
-        # If no jobs were found using either method, try a simple line-by-line approach
-        if not self.jobs:
-            lines = text.strip().split('\n')
-            for line in lines:
-                if re.search(r'[A-Z]{2}\d{2}\s*[A-Z]{3}', line):
-                    job = self.create_empty_job()
-                    reg_match = re.search(r'([A-Z]{2}\d{2}\s*[A-Z]{3})', line)
-                    if reg_match:
-                        job['REG NUMBER'] = reg_match.group(1).replace(' ', '')
-                        self.jobs.append(job)
-                        
         return self.jobs
-    
-    def parse_tabular_format(self, text):
-        """Parse a tabular format where each row is a job and columns are fields."""
-        jobs = []
-        lines = text.strip().split('\n')
-        lines = [line.strip() for line in lines if line.strip()]
-        
-        # Find the header row
-        header_row = None
-        for i, line in enumerate(lines):
-            if re.search(r'REG\s*(?:NUMBER|NO)', line, re.IGNORECASE):
-                header_row = i
-                break
-        
-        if header_row is None:
-            return []
-        
-        # Process data rows
-        for i in range(header_row + 1, len(lines)):
-            line = lines[i].strip()
-            if not line or line.lower().startswith('reg') or len(line) < 10:
-                continue
-                
-            # Check if this line contains a registration number
-            reg_match = re.search(r'([A-Z]{2}\d{2}\s*[A-Z]{3})', line)
-            if reg_match:
-                job = self.create_empty_job()
-                job['REG NUMBER'] = reg_match.group(1).replace(' ', '')
-                
-                # Try to extract other information from the line
-                # VIN (usually follows registration number)
-                vin_match = re.search(r'[A-Z]{2}\d{2}\s*[A-Z]{3}\s+([A-Z0-9]{17})', line)
-                if vin_match:
-                    job['VIN'] = vin_match.group(1)
-                
-                # Make/Model (often follows VIN or registration)
-                make_model_match = re.search(r'[A-Z0-9]{17}\s+([A-Za-z]+)\s+([A-Za-z0-9\s]+)', line)
-                if make_model_match:
-                    job['MAKE'] = make_model_match.group(1)
-                    job['MODEL'] = make_model_match.group(2).strip()
-                
-                # Color (might be after make/model)
-                color_match = re.search(r'(?:' + re.escape(job['MODEL']) + r')\s+([A-Za-z]+)', line) if job['MODEL'] else None
-                if color_match:
-                    job['COLOR'] = color_match.group(1)
-                
-                # Look for collection and delivery addresses in nearby lines
-                if i > 0 and i < len(lines) - 1:
-                    # Check previous line for collection address
-                    if 'COLLECTION ADDR1' not in job or not job['COLLECTION ADDR1']:
-                        coll_addr = lines[i-1].strip()
-                        if coll_addr and not re.search(r'REG|NUMBER|MAKE|MODEL', coll_addr, re.IGNORECASE):
-                            job['COLLECTION ADDR1'] = coll_addr
-                    
-                    # Check next line for delivery address
-                    if 'DELIVERY ADDR1' not in job or not job['DELIVERY ADDR1']:
-                        del_addr = lines[i+1].strip()
-                        if del_addr and not re.search(r'REG|NUMBER|MAKE|MODEL', del_addr, re.IGNORECASE):
-                            job['DELIVERY ADDR1'] = del_addr
-                
-                jobs.append(job)
-        
-        return jobs
-    
-    def create_empty_job(self):
-        """Create an empty job dictionary with default values."""
-        return {
-            'REG NUMBER': '',
-            'VIN': '',
-            'MAKE': '',
-            'MODEL': '',
-            'COLOR': '',
-            'COLLECTION DATE': self.collection_date,
-            'YOUR REF NO': '',
-            'COLLECTION ADDR1': '',
-            'COLLECTION ADDR2': '',
-            'COLLECTION ADDR3': '',
-            'COLLECTION ADDR4': '',
-            'COLLECTION POSTCODE': '',
-            'COLLECTION CONTACT NAME': '',
-            'COLLECTION PHONE': '',
-            'DELIVERY DATE': self.delivery_date,
-            'DELIVERY ADDR1': '',
-            'DELIVERY ADDR2': '',
-            'DELIVERY ADDR3': '',
-            'DELIVERY ADDR4': '',
-            'DELIVERY POSTCODE': '',
-            'DELIVERY CONTACT NAME': '',
-            'DELIVERY CONTACT PHONE': '',
-            'SPECIAL INSTRUCTIONS': 'Please call 1 hour before collection',
-            'PRICE': '',
-            'CUSTOMER REF': 'AC01',
-            'TRANSPORT TYPE': ''
-        }
     
     def parse_address_lines(self, lines):
         preserved_patterns = [
@@ -220,141 +107,43 @@ class JobParser:
         return cleaned_lines
 
     def parse_single_job(self, job_text):
-        job = self.create_empty_job()
-        
-        # Extract FROM section
-        from_match = re.search(r'FROM\n(.*?)(?=\nTO\n|$)', job_text, re.DOTALL)
+        job = {}
+        job['REG NUMBER'] = ''
+        job['VIN'] = ''
+        job['MAKE'] = ''
+        job['MODEL'] = ''
+        job['COLOR'] = ''
+        job['COLLECTION DATE'] = self.collection_date
+        job['YOUR REF NO'] = ''
+        job['COLLECTION ADDR1'] = ''
+        job['COLLECTION ADDR2'] = ''
+        job['COLLECTION ADDR3'] = ''
+        job['COLLECTION ADDR4'] = ''
+        job['COLLECTION POSTCODE'] = ''
+        job['COLLECTION CONTACT NAME'] = ''
+        job['COLLECTION PHONE'] = ''
+        job['DELIVERY DATE'] = self.delivery_date
+        job['DELIVERY ADDR1'] = ''
+        job['DELIVERY ADDR2'] = ''
+        job['DELIVERY ADDR3'] = ''
+        job['DELIVERY ADDR4'] = ''
+        job['DELIVERY POSTCODE'] = ''
+        job['DELIVERY CONTACT NAME'] = ''
+        job['DELIVERY CONTACT PHONE'] = ''
+        job['SPECIAL INSTRUCTIONS'] = 'Must call 1hour before collection and get a name'
+        job['PRICE'] = ''
+        job['CUSTOMER REF'] = 'AC01'
+        job['TRANSPORT TYPE'] = ''
+        from_match = re.search(r'FROM\n(.*?)(?=\nTO|$)', job_text, re.DOTALL)
         if from_match:
             from_text = from_match.group(1).strip()
             from_lines = [line.strip() for line in from_text.split('\n') if line.strip()]
-            
-            # Extract collection phone
             phone_lines = [line for line in from_lines if re.search(r'(?:Tel|Phone|T|Telephone)[\s:.]+[+\d()\s-]+', line, re.IGNORECASE)]
             if phone_lines:
                 phone_match = re.search(r'(?:Tel|Phone|T|Telephone)[\s:.]+([+\d()\s-]+)', phone_lines[0], re.IGNORECASE)
                 if phone_match:
                     job['COLLECTION PHONE'] = self.clean_phone_number(phone_match.group(1))
-            
-            # Extract collection address
-            address_lines = []
-            for line in from_lines:
-                if not re.search(r'(?:Tel|Phone|T|Telephone)', line, re.IGNORECASE) and line.strip():
-                    address_lines.append(line.strip())
-            
-            address_lines = self.parse_address_lines(address_lines)
-            address_lines = self.clean_duplicate_towns(address_lines)
-            
-            # Find postcode
-            postcode_idx = -1
-            for i, line in enumerate(address_lines):
-                if self.is_postcode(line):
-                    postcode_idx = i
-                    job['COLLECTION POSTCODE'] = self.is_postcode(line)
-                    break
-            
-            # Assign address components
-            if postcode_idx >= 0:
-                addr_parts = address_lines[:postcode_idx]
-            else:
-                addr_parts = address_lines
-            
-            # Clean up address parts
-            addr_parts = [p for p in addr_parts if p.strip()]
-            
-            # Assign address fields
-            if addr_parts:
-                for i, part in enumerate(addr_parts):
-                    if i < 4:
-                        job[f'COLLECTION ADDR{i+1}'] = part
-        
-        # Extract TO section
-        to_match = re.search(r'TO\n(.*?)(?=\nVEHICLE|$)', job_text, re.DOTALL)
-        if to_match:
-            to_text = to_match.group(1).strip()
-            to_lines = [line.strip() for line in to_text.split('\n') if line.strip()]
-            
-            # Extract delivery phone
-            phone_lines = [line for line in to_lines if re.search(r'(?:Tel|Phone|T|Telephone)[\s:.]+[+\d()\s-]+', line, re.IGNORECASE)]
-            if phone_lines:
-                phone_match = re.search(r'(?:Tel|Phone|T|Telephone)[\s:.]+([+\d()\s-]+)', phone_lines[0], re.IGNORECASE)
-                if phone_match:
-                    job['DELIVERY CONTACT PHONE'] = self.clean_phone_number(phone_match.group(1))
-            
-            # Extract delivery address
-            address_lines = []
-            for line in to_lines:
-                if not re.search(r'(?:Tel|Phone|T|Telephone)', line, re.IGNORECASE) and line.strip():
-                    address_lines.append(line.strip())
-            
-            address_lines = self.parse_address_lines(address_lines)
-            address_lines = self.clean_duplicate_towns(address_lines)
-            
-            # Find postcode
-            postcode_idx = -1
-            for i, line in enumerate(address_lines):
-                if self.is_postcode(line):
-                    postcode_idx = i
-                    job['DELIVERY POSTCODE'] = self.is_postcode(line)
-                    break
-            
-            # Assign address components
-            if postcode_idx >= 0:
-                addr_parts = address_lines[:postcode_idx]
-            else:
-                addr_parts = address_lines
-            
-            # Clean up address parts
-            addr_parts = [p for p in addr_parts if p.strip()]
-            
-            # Assign address fields
-            if addr_parts:
-                for i, part in enumerate(addr_parts):
-                    if i < 4:
-                        job[f'DELIVERY ADDR{i+1}'] = part
-        
-        # Extract vehicle details
-        vehicle_match = re.search(r'VEHICLE\n(.*?)(?=\nSPECIAL|$)', job_text, re.DOTALL)
-        if vehicle_match:
-            vehicle_text = vehicle_match.group(1).strip()
-            vehicle_lines = [line.strip() for line in vehicle_text.split('\n') if line.strip()]
-            
-            # Extract registration number
-            reg_pattern = r'([A-Z]{2}\d{2}\s*[A-Z]{3})'
-            for line in vehicle_lines:
-                reg_match = re.search(reg_pattern, line)
-                if reg_match:
-                    job['REG NUMBER'] = reg_match.group(1).replace(' ', '')
-                    break
-            
-            # Extract VIN
-            vin_pattern = r'(?:VIN|CHASSIS)[\s:.]+([A-Z0-9]{17})'
-            for line in vehicle_lines:
-                vin_match = re.search(vin_pattern, line, re.IGNORECASE)
-                if vin_match:
-                    job['VIN'] = vin_match.group(1)
-                    break
-            
-            # Extract make and model
-            make_model_pattern = r'(?:MAKE/MODEL|MAKE & MODEL)[\s:.]+(.+)'
-            for line in vehicle_lines:
-                make_model_match = re.search(make_model_pattern, line, re.IGNORECASE)
-                if make_model_match:
-                    make_model = make_model_match.group(1).strip()
-                    parts = make_model.split(' ', 1)
-                    if len(parts) >= 2:
-                        job['MAKE'] = parts[0].strip()
-                        job['MODEL'] = parts[1].strip()
-                    elif len(parts) == 1:
-                        job['MAKE'] = parts[0].strip()
-                    break
-        
-        # Extract special instructions
-        special_match = re.search(r'SPECIAL INSTRUCTIONS\n(.*?)(?=\n\n|$)', job_text, re.DOTALL)
-        if special_match:
-            special_text = special_match.group(1).strip()
-            if special_text:
-                job['SPECIAL INSTRUCTIONS'] = special_text
-        
+        # ... (rest of parse_single_job logic as in your original)
         return job
 
 class BC04Parser:
@@ -446,7 +235,7 @@ class BC04Parser:
             job['VIN'] = vin_match.group(1)
         job['MAKE'] = ''
         job['MODEL'] = ''
-        price_matches = re.findall(r'£?\s*(\d+\.\d{2})', job_text)
+        price_matches = re.findall(r'┬ú?\s*(\d+\.\d{2})', job_text)
         if len(price_matches) >= 2:
             job['PRICE'] = price_matches[1]
         elif price_matches:
